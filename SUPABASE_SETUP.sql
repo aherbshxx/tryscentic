@@ -71,6 +71,17 @@ create table public.product_variants (
   size_label text not null, -- e.g. "100ML", "50ML", "Tester"
   price numeric not null,
   stock_quantity integer not null default 0,
+  thumbnail_image text, -- URL to variant-specific thumbnail
+  created_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+-- 7.0 VARIANT IMAGES
+-- Supporting multiple images per SKU/Size
+create table public.variant_images (
+  id uuid default uuid_generate_v4() primary key,
+  variant_id uuid references public.product_variants(id) on delete cascade not null,
+  image_url text not null,
+  sort_order integer default 0,
   created_at timestamp with time zone default timezone('utc'::text, now()) not null
 );
 
@@ -171,6 +182,7 @@ alter table public.transactions enable row level security;
 alter table public.gift_codes enable row level security;
 alter table public.favorites enable row level security;
 alter table public.promo_codes enable row level security;
+alter table public.variant_images enable row level security;
 
 -- Catalog Policies (Public Read, Admin Write)
 -- Brands
@@ -193,6 +205,11 @@ create policy "Admin manage products" on public.products for all using (
 
 create policy "Public read variants" on public.product_variants for select using (true);
 create policy "Admin manage variants" on public.product_variants for all using (
+  exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
+);
+
+create policy "Public read variant images" on public.variant_images for select using (true);
+create policy "Admin manage variant images" on public.variant_images for all using (
   exists (select 1 from public.profiles where id = auth.uid() and role = 'admin')
 );
 
@@ -435,13 +452,37 @@ create index if not exists idx_favorites_user_id on public.favorites(user_id);
 create index if not exists idx_favorites_product_id on public.favorites(product_id);
 
 -- ==========================================
+-- 14. STORAGE SETUP
+-- ==========================================
+
+-- Create products bucket if it doesn't exist
+insert into storage.buckets (id, name, public)
+values ('products', 'products', true)
+on conflict (id) do nothing;
+
+-- Storage RLS Policies
+-- To use RLS, ensure the bucket has it enabled in the dashboard.
+-- Note: storage.objects RLS policies
+
+-- 1. Public Read Access
+create policy "Public Access"
+on storage.objects for select
+using ( bucket_id = 'products' );
+
+-- 2. Admin Management (Upload, Update, Delete)
+create policy "Admin Management"
+on storage.objects for all
+using (
+  bucket_id = 'products' 
+  AND (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'))
+)
+with check (
+  bucket_id = 'products' 
+  AND (exists (select 1 from public.profiles where id = auth.uid() and role = 'admin'))
+);
+
+-- ==========================================
 -- COMPLETION MESSAGE
 -- ==========================================
--- All tables, policies, triggers, and functions have been created.
--- Next steps:
--- 1. Verify all tables exist in Supabase Dashboard
--- 2. Test authentication flows (signup, login, password reset)
--- 3. Configure email templates in Supabase Dashboard
--- 4. Set up OAuth providers if needed (Google, etc.)
--- 5. Populate initial data (brands, categories, products)
+-- ... (rest of the completion message)
 

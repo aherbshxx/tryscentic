@@ -2,10 +2,12 @@
 
 import { createClient } from "@/lib/utils/supabase/server";
 import { v4 as uuidv4 } from "uuid";
+import { verifyAdmin } from "@/data-access/admin/auth";
 
 /**
  * Upload an image to Supabase Storage
- * @param file - File to upload (as base64 or File object)
+ * @param fileData - File content
+ * @param fileName - Original filename
  * @param bucket - Storage bucket name
  * @param folder - Folder path within bucket
  * @returns Public URL of uploaded image
@@ -16,7 +18,8 @@ export async function uploadImage(
   bucket: string = "products",
   folder: string = "inventory"
 ): Promise<string> {
-  const supabase = await createClient();
+  // 1. Verify admin status (this ensures the user is logged in and has the admin role)
+  const { supabase } = await verifyAdmin();
 
   // Generate unique filename
   const fileExtension = fileName.split(".").pop();

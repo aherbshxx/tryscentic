@@ -87,7 +87,7 @@ export default function Header() {
   return (
     <>
       <header
-        className="fixed bg-accent backdrop-blur-sm text-white font-bold z-50 w-full"
+        className="fixed bg-accent backdrop-blur-sm text-white font-bold z-999 w-full"
         data-aos="fade-down"
       >
         <div className="mx-auto max-w-9xl px-4 sm:px-6 lg:px-8">

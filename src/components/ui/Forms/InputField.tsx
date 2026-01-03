@@ -56,12 +56,14 @@ export const InputField: React.FC<InputFieldProps> = ({
     // 7. Determine the toggle icon to display
     const ToggleIconComponent = isPasswordVisible ? EyeOffIcon : EyeIcon;
 
+    const isDisabled = props.disabled;
+
     return (
         // Added 'flex' class to the container to ensure proper layout if needed, 
         // but 'relative w-full' is still the key for positioning.
         <div className="relative w-full">
             {/* Left Icon (Original Icon) */}
-            <div className="absolute left-3 top-1/2 -translate-y-1/2 text-[#511624] pointer-events-none z-10">
+            <div className={`absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none z-10 transition-colors ${isDisabled ? 'text-white/70' : 'text-[#511624]'}`}>
                 {icon}
             </div>
 
@@ -71,9 +73,14 @@ export const InputField: React.FC<InputFieldProps> = ({
                 {...props}
                 // All input styling converted to Tailwind. Added 'pr-12' for space for the toggle icon.
                 className={`
-                    w-full py-3 pl-10 ${isPasswordField ? 'pr-12' : 'pr-4'} bg-white/90 border border-gray-300 rounded-lg text-sm text-gray-900 
-                    transition-all duration-200 shadow-inner focus:outline-none focus:border-[#511624] 
-                    focus:ring-3 focus:ring-[#511624]/10 placeholder:text-gray-500
+                    bg-white/90 text-sm text-gray-900 border border-gray-300 placeholder:text-gray-500
+                    shadow-inner
+                    w-full py-3 pl-10 rounded-lg 
+                    transition-all duration-200
+                    focus:outline-none focus:border-[#511624] 
+                    focus:ring-3 focus:ring-[#511624]/10 
+                    ${isPasswordField ? 'pr-12' : 'pr-4'}
+                    ${isDisabled ? '!bg-gray-700 !border !border-red !text-white' : ''}
                 `}
             />
 

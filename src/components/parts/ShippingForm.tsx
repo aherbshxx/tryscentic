@@ -1,52 +1,65 @@
 "use client";
 
-export default function ShippingForm() {
-  const PrimaryOrange = "#F0A020";
-  const InputBgColor = "#473033";
-  const FormMaxWidth = "max-w-4xl";
-  const inputStyle = {
-    backgroundColor: InputBgColor,
-    backgroundImage: "linear-gradient(rgba(255,255,255,0.3), rgba(255,255,255,0.3))",
+import { Building2, Globe, Home, Phone, User } from "lucide-react";
+import { InputField } from "../ui/Forms/InputField";
+import { useState } from "react";
+import { toast } from "sonner";
+
+interface ShippingData {
+  fullName: string;
+  address: string;
+  city: string;
+  country: string;
+  phone: string;
+}
+
+interface ShippingFormProps {
+  onNext: (data: ShippingData) => void;
+  initialData?: ShippingData;
+}
+
+export default function ShippingForm({ onNext, initialData }: ShippingFormProps) {
+  const [formData, setFormData] = useState<ShippingData>(initialData || {
+    fullName: "",
+    address: "",
+    city: "",
+    country: "Egypt",
+    phone: "",
+  });
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const { id, value } = e.target;
+    setFormData(prev => ({ ...prev, [id]: value }));
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    // Simple validation
+    if (!formData.fullName || !formData.address || !formData.city || !formData.phone) {
+      toast("Please fill in all fields.");
+      return;
+    }
+    onNext(formData);
   };
 
   return (
-    <div className={`lg:col-span-2 text-white ${FormMaxWidth}`}>
-
-      <h1 className="text-3xl font-bold mb-6">Checkout</h1>
-
-
-      <div className="mb-10 w-full">
-        <div className="flex justify-between text-sm mb-2">
-          <span className="font-semibold text-white">Shipping Information</span>
-          <span className="text-white/80">Payment</span>
-          <span className="text-white/80">Review Order</span>
-        </div>
-
-        <div className="w-full h-3 relative rounded overflow-hidden">
-          <div
-            className="h-full"
-            style={{ backgroundColor: PrimaryOrange, width: "33.33%" }}
-          ></div>
-          <div
-            className="h-full absolute top-0 right-0"
-            style={{ backgroundColor: "white", width: "66.67%" }}
-          ></div>
-        </div>
-      </div>
-
+    <>
       <h2 className="text-xl font-semibold mb-4">Shipping Information</h2>
 
-      <form className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-4">
 
         <div className="flex flex-col relative">
           <label className="text-sm text-gray-400 mb-1" htmlFor="fullName">
             Full Name
           </label>
-          <input
+          <InputField
             id="fullName"
-            className="w-full p-3 rounded text-white focus:outline-none relative z-10"
-            style={inputStyle}
+            icon={<User />}
+            type="text"
             placeholder="John Doe"
+            value={formData.fullName}
+            onChange={handleChange}
+            required
           />
         </div>
 
@@ -55,11 +68,14 @@ export default function ShippingForm() {
           <label className="text-sm text-gray-400 mb-1" htmlFor="address">
             Address
           </label>
-          <input
+          <InputField
             id="address"
-            className="w-full p-3 rounded text-white focus:outline-none relative z-10"
-            style={inputStyle}
+            icon={<Home />}
+            type="text"
             placeholder="123 Perfume Lane"
+            value={formData.address}
+            onChange={handleChange}
+            required
           />
         </div>
 
@@ -69,26 +85,27 @@ export default function ShippingForm() {
             <label className="text-sm text-gray-400 mb-1" htmlFor="city">
               City
             </label>
-            <input
+            <InputField
               id="city"
-              className="p-3 rounded text-white focus:outline-none relative z-10"
-              style={inputStyle}
+              icon={<Building2 />}
+              type="text"
               placeholder="Fragranceville"
+              value={formData.city}
+              onChange={handleChange}
+              required
             />
           </div>
 
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div className="flex flex-col relative">
             <label className="text-sm text-gray-400 mb-1" htmlFor="country">
               Country
             </label>
-            <input
+            <InputField
               id="country"
-              className="p-3 rounded text-white focus:outline-none relative z-10"
-              style={inputStyle}
-              value="Egypt"
+              icon={<Globe className="text-white" />}
+              type="text"
+              placeholder="Egypt"
+              value={formData.country}
               disabled
               readOnly
             />
@@ -100,23 +117,27 @@ export default function ShippingForm() {
           <label className="text-sm text-gray-400 mb-1" htmlFor="phone">
             Phone Number
           </label>
-          <input
+          <InputField
             id="phone"
-            className="w-full p-3 rounded text-white focus:outline-none relative z-10"
-            style={inputStyle}
-            placeholder="+1 (555) 123-4567"
+            icon={<Phone />}
+            type="text"
+            placeholder="+20 10 2880 6961"
+            value={formData.phone}
+            onChange={handleChange}
+            required
           />
         </div>
 
         <div className="mt-8 flex justify-end">
           <button
-            className="px-6 py-3 text-white font-semibold rounded hover:opacity-90 transition-opacity"
-            style={{ backgroundColor: PrimaryOrange }}
+            type="submit"
+            className="bg-secondary px-6 py-3 text-white font-semibold rounded hover:opacity-90 transition-opacity"
           >
             Continue to Payment
           </button>
         </div>
       </form>
-    </div>
+    </>
   );
 }
+

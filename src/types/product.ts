@@ -11,6 +11,8 @@ export interface Product {
 export interface ProductSizeOption {
   label: string;
   price: number;
+  images?: string[];
+  thumbnail?: string | null;
 }
 
 export interface ProductReview {

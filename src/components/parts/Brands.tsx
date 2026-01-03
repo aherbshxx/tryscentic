@@ -31,9 +31,9 @@ export default function Brands({ brands, existingImages }: { brands: Brand[], ex
     if (brandsWithLogos.length === 0) return null;
 
     return (
-        <section className="py-10 bg-white">
+        <section className="py-6 bg-gradient-to-t from-secondary/40 to-transparent">
             <div className="container mx-auto px-4">
-                <h2 className="text-3xl font-bold text-center mb-8 uppercase tracking-widest text-gray-800">
+                <h2 className="text-3xl font-bold text-center mb-8 uppercase tracking-widest text-white">
                     Shop By Brand
                 </h2>
 
@@ -60,7 +60,7 @@ export default function Brands({ brands, existingImages }: { brands: Brand[], ex
                     className="brands-swiper"
                 >
                     {brandsWithLogos.map((brand) => (
-                        <SwiperSlide key={brand.id} className="flex items-center justify-center">
+                        <SwiperSlide key={brand.id} className="flex items-center justify-center py-2 px-4 rounded-3xl bg-white border border-secondary">
                             <Link
                                 href={`/pages/shop?brand_id=${brand.id}`}
                                 className="group flex flex-col items-center justify-center p-4 transition-transform hover:scale-105"

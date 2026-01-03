@@ -43,7 +43,7 @@ export async function getProducts(params?: {
       *,
       brand:brands(*),
       category:categories(*),
-      variants:product_variants(*)
+      variants:product_variants(*, images:variant_images(*))
     `,
     { count: "exact" }
   );
@@ -94,13 +94,15 @@ export async function createProduct(input: {
     size_label: string;
     price: number;
     stock_quantity: number;
+    thumbnail_image?: string | null;
+    images?: { image_url: string; sort_order: number }[];
   }[];
 }) {
   const { supabase } = await verifyAdmin();
 
   const validatedInput = createProductSchema.parse(input);
 
-  // Create product
+  // 1. Create product
   const { data: product, error: productError } = await supabase
     .from("products")
     .insert({
@@ -119,20 +121,35 @@ export async function createProduct(input: {
     throw new Error(`Failed to create product: ${productError.message}`);
   }
 
-  // Create variants
-  const variantsToInsert = validatedInput.variants.map((v) => ({
-    product_id: product.id,
-    ...v,
-  }));
+  // 2. Create variants and their images
+  for (const variantData of validatedInput.variants) {
+    const { images, ...v } = variantData;
+    const { data: variant, error: variantError } = await supabase
+      .from("product_variants")
+      .insert({
+        product_id: product.id,
+        ...v,
+      })
+      .select()
+      .single();
 
-  const { error: variantsError } = await supabase
-    .from("product_variants")
-    .insert(variantsToInsert);
+    if (variantError)
+      throw new Error(`Failed to create variant: ${variantError.message}`);
 
-  if (variantsError) {
-    // Rollback product creation
-    await supabase.from("products").delete().eq("id", product.id);
-    throw new Error(`Failed to create variants: ${variantsError.message}`);
+    if (images && images.length > 0) {
+      const imagesToInsert = images.map((img) => ({
+        variant_id: variant.id,
+        image_url: img.image_url,
+        sort_order: img.sort_order,
+      }));
+      const { error: imagesError } = await supabase
+        .from("variant_images")
+        .insert(imagesToInsert);
+      if (imagesError)
+        throw new Error(
+          `Failed to create variant images: ${imagesError.message}`
+        );
+    }
   }
 
   revalidateAdminPaths();
@@ -145,17 +162,19 @@ export async function createProduct(input: {
  */
 export async function updateProduct(input: {
   id: string;
-  title: string;
-  description: string;
-  brand_id: string;
-  category_id: string;
-  base_image_url: string;
+  title?: string;
+  description?: string;
+  brand_id?: string;
+  category_id?: string;
+  base_image_url?: string;
   gallery_images?: string[];
-  variants: {
+  variants?: {
     id?: string;
     size_label: string;
     price: number;
     stock_quantity: number;
+    thumbnail_image?: string | null;
+    images?: { id?: string; image_url: string; sort_order: number }[];
   }[];
   is_active?: boolean;
 }) {
@@ -166,75 +185,149 @@ export async function updateProduct(input: {
   const { id, variants, ...updates } = validatedInput;
 
   // 1. Update Product Base Details
-  const { error: productError } = await supabase
-    .from("products")
-    .update(updates)
-    .eq("id", id);
+  if (Object.keys(updates).length > 0) {
+    const { error: productError } = await supabase
+      .from("products")
+      .update(updates)
+      .eq("id", id);
 
-  if (productError) {
-    throw new Error(`Failed to update product: ${productError.message}`);
+    if (productError) {
+      throw new Error(`Failed to update product: ${productError.message}`);
+    }
   }
 
   // 2. Handle Variants
-  // Strategy: Delete all existing variants for this product and re-insert/upsert.
-  // Ideally, we matches IDs to update, but deleting and re-inserting is safer/easier
-  // given we don't hold much state on variants other than ID/stock/price.
-  // HOWEVER, deleting breaks order statistics if linked by ID.
-  // SO: We must UPSERT.
-
-  if (variants && variants.length > 0) {
-    const variantsToUpsert = variants.map((v) => ({
-      ...v,
-      product_id: id,
-      // Ensure ID is valid UUID if present, else let Postgres generate (via omit?)
-      // If we pass undefined ID for new ones, we can't use upsert easily without excluding it.
-      // But if we use 'id' as key, we need it.
-      // Solution: Split into "Updates" and "Inserts" or just use separate calls.
-    }));
-
+  if (variants) {
     // Identify variants to keep (IDs present in input)
     const variantIdsToKeep = variants
       .map((v) => v.id)
-      .filter((id): id is string => !!id);
+      .filter((vId): vId is string => !!vId);
 
     // Delete variants NOT in the input list
     if (variantIdsToKeep.length > 0) {
-      await supabase
+      const { error: deleteVariantsError } = await supabase
         .from("product_variants")
         .delete()
         .eq("product_id", id)
         .not("id", "in", `(${variantIdsToKeep.join(",")})`);
+      if (deleteVariantsError)
+        throw new Error(
+          `Failed to delete old variants: ${deleteVariantsError.message}`
+        );
     } else {
-      // If no IDs to keep, it implies all are new? Or we just cleared them?
-      // But validation requires min 1.
-      // If we are replacing all, we might delete all first.
-      // Assuming if IDs exist we filter, if new ones don't have IDs.
+      // If no IDs to keep, it implies all existing variants should be deleted
+      const { error: deleteAllVariantsError } = await supabase
+        .from("product_variants")
+        .delete()
+        .eq("product_id", id);
+      if (deleteAllVariantsError)
+        throw new Error(
+          `Failed to delete all variants: ${deleteAllVariantsError.message}`
+        );
     }
 
     // Upsert each variant
-    for (const variant of variants) {
-      if (variant.id) {
-        // Update
-        const { error: maxError } = await supabase
+    for (const variantData of variants) {
+      const { id: vId, images, ...vFields } = variantData;
+      let currentVariantId: string;
+
+      if (vId) {
+        // Update existing variant
+        const { error: updateVariantError } = await supabase
           .from("product_variants")
-          .update({
-            size_label: variant.size_label,
-            price: variant.price,
-            stock_quantity: variant.stock_quantity,
-          })
-          .eq("id", variant.id);
-        if (maxError) throw maxError;
+          .update(vFields)
+          .eq("id", vId);
+        if (updateVariantError)
+          throw new Error(
+            `Failed to update variant ${vId}: ${updateVariantError.message}`
+          );
+        currentVariantId = vId;
       } else {
-        // Insert
-        const { error: insertError } = await supabase
+        // Insert new variant
+        const { data: newVariant, error: insertVariantError } = await supabase
           .from("product_variants")
           .insert({
             product_id: id,
-            size_label: variant.size_label,
-            price: variant.price,
-            stock_quantity: variant.stock_quantity,
-          });
-        if (insertError) throw insertError;
+            ...vFields,
+          })
+          .select("id")
+          .single();
+        if (insertVariantError)
+          throw new Error(
+            `Failed to insert new variant: ${insertVariantError.message}`
+          );
+        currentVariantId = newVariant.id;
+      }
+
+      // Handle variant images for the current variant
+      if (images) {
+        const imageIdsToKeep = images
+          .map((img) => img.id)
+          .filter((imgId): imgId is string => !!imgId);
+
+        // Delete images not in the input list for this variant
+        if (imageIdsToKeep.length > 0) {
+          const { error: deleteImagesError } = await supabase
+            .from("variant_images")
+            .delete()
+            .eq("variant_id", currentVariantId)
+            .not("id", "in", `(${imageIdsToKeep.join(",")})`);
+          if (deleteImagesError)
+            throw new Error(
+              `Failed to delete old variant images for variant ${currentVariantId}: ${deleteImagesError.message}`
+            );
+        } else {
+          // If no image IDs to keep, delete all images for this variant
+          const { error: deleteAllImagesError } = await supabase
+            .from("variant_images")
+            .delete()
+            .eq("variant_id", currentVariantId);
+          if (deleteAllImagesError)
+            throw new Error(
+              `Failed to delete all variant images for variant ${currentVariantId}: ${deleteAllImagesError.message}`
+            );
+        }
+
+        // Upsert each image
+        for (const img of images) {
+          if (img.id) {
+            // Update existing image
+            const { error: updateImageError } = await supabase
+              .from("variant_images")
+              .update({
+                image_url: img.image_url,
+                sort_order: img.sort_order,
+              })
+              .eq("id", img.id);
+            if (updateImageError)
+              throw new Error(
+                `Failed to update image ${img.id}: ${updateImageError.message}`
+              );
+          } else {
+            // Insert new image
+            const { error: insertImageError } = await supabase
+              .from("variant_images")
+              .insert({
+                variant_id: currentVariantId,
+                image_url: img.image_url,
+                sort_order: img.sort_order,
+              });
+            if (insertImageError)
+              throw new Error(
+                `Failed to insert new image for variant ${currentVariantId}: ${insertImageError.message}`
+              );
+          }
+        }
+      } else {
+        // If images array is explicitly null/undefined, delete all images for this variant
+        const { error: deleteImagesError } = await supabase
+          .from("variant_images")
+          .delete()
+          .eq("variant_id", currentVariantId);
+        if (deleteImagesError)
+          throw new Error(
+            `Failed to delete variant images for variant ${currentVariantId}: ${deleteImagesError.message}`
+          );
       }
     }
   }
@@ -331,6 +424,25 @@ export async function getBrands() {
 }
 
 /**
+ * Get brand by ID
+ */
+export async function getBrandById(brandId: string) {
+  const { supabase } = await verifyAdmin();
+
+  const { data, error } = await supabase
+    .from("brands")
+    .select("*")
+    .eq("id", brandId)
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to fetch brand: ${error.message}`);
+  }
+
+  return data as Brand;
+}
+
+/**
  * Create brand
  */
 export async function createBrand(input: { name: string; slug: string }) {
@@ -351,6 +463,55 @@ export async function createBrand(input: { name: string; slug: string }) {
   revalidateAdminPaths();
 
   return data;
+}
+
+/**
+ * Update brand
+ */
+export async function updateBrand(input: {
+  id: string;
+  name: string;
+  slug: string;
+}) {
+  const { supabase } = await verifyAdmin();
+
+  // Validate using schema (we can reuse createBrandSchema for individual fields if needed)
+  const validatedInput = createBrandSchema.parse({
+    name: input.name,
+    slug: input.slug,
+  });
+
+  const { data, error } = await supabase
+    .from("brands")
+    .update(validatedInput)
+    .eq("id", input.id)
+    .select()
+    .single();
+
+  if (error) {
+    throw new Error(`Failed to update brand: ${error.message}`);
+  }
+
+  revalidateAdminPaths();
+
+  return data;
+}
+
+/**
+ * Delete brand
+ */
+export async function deleteBrand(brandId: string) {
+  const { supabase } = await verifyAdmin();
+
+  const { error } = await supabase.from("brands").delete().eq("id", brandId);
+
+  if (error) {
+    throw new Error(`Failed to delete brand: ${error.message}`);
+  }
+
+  revalidateAdminPaths();
+
+  return { success: true };
 }
 
 /**

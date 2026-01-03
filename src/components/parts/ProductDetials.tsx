@@ -38,13 +38,28 @@ export default function ProductDetials({
     setLiked(isFavorite);
   }, [isFavorite]);
 
-  const [selectedImage, setSelectedImage] = useState(
-    product.images[0] ?? product.baseImage
+  const [selectedSize, setSelectedSize] = useState<ProductSizeOption>(
+    product.sizes[0] ?? { label: "Standard", price: 0 }
   );
 
-  const [selectedSize, setSelectedSize] = useState<ProductSizeOption>(
-    product.sizes[1] ?? { label: "Standard", price: 0 }
+  // The gallery of images to display for the current selection
+  const currentImages = useMemo(() => {
+    if (selectedSize.images && selectedSize.images.length > 0) {
+      return selectedSize.images;
+    }
+    return product.images;
+  }, [selectedSize, product.images]);
+
+  const [selectedImage, setSelectedImage] = useState(
+    currentImages[0] ?? product.baseImage
   );
+
+  // Sync selected image if currentImages changes and doesn't contain the selected image anymore
+  useEffect(() => {
+    if (selectedSize.images && selectedSize.images.length > 0) {
+      setSelectedImage(selectedSize.images[0]);
+    }
+  }, [selectedSize]);
 
   const priceLabel = useMemo(
     () => `LE ${selectedSize.price.toFixed(0)}`,
@@ -109,7 +124,7 @@ export default function ProductDetials({
                 />
               </div>
               <div className="grid grid-cols-4 gap-4">
-                {product.images.map((image) => (
+                {currentImages.map((image) => (
                   <button
                     key={image}
                     onClick={() => setSelectedImage(image)}

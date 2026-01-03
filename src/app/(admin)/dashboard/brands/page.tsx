@@ -1,10 +1,11 @@
 import Link from "next/link";
 import Image from "next/image";
 import { getBrands } from "@/data-access/admin/products";
-import { Plus, Search } from "lucide-react";
 import { readdir } from "fs/promises";
 import { join } from "path";
 import { cwd } from "process";
+import { Plus, Edit2 } from "lucide-react";
+import DeleteBrandButton from "@/components/admin/DeleteBrandButton";
 
 export default async function BrandsPage() {
     const brands = await getBrands();
@@ -34,8 +35,8 @@ export default async function BrandsPage() {
         <div className="space-y-6">
             <div className="flex items-center justify-between">
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900 font-serif">Brands</h1>
-                    <p className="text-gray-500 mt-1">Manage product brands</p>
+                    <h1 className="text-3xl font-bold text-white font-serif">Brands</h1>
+                    <p className="text-gray-200 mt-1">Manage product brands</p>
                 </div>
                 <Link
                     href="/dashboard/brands/add"
@@ -100,7 +101,16 @@ export default async function BrandsPage() {
                                                 )}
                                             </td>
                                             <td className="px-6 py-4 text-right">
-                                                {/* Edit/Delete actions could go here */}
+                                                <div className="flex items-center justify-end gap-2">
+                                                    <Link
+                                                        href={`/dashboard/brands/${brand.id}/edit`}
+                                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors text-xs font-semibold"
+                                                    >
+                                                        <Edit2 size={14} />
+                                                        Edit
+                                                    </Link>
+                                                    <DeleteBrandButton brandId={brand.id} brandName={brand.name} />
+                                                </div>
                                             </td>
                                         </tr>
                                     );

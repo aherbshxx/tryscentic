@@ -58,7 +58,7 @@ export default function ProductCard({ product, isFavorite = false, onToggleFavor
     <article
       className={
         styles.card +
-        ` sm:p-3 shadow-card shadow shadow-white hover:cursor-pointer hover:shadow-lg transition-all duration-300 hover:scale-105 hover:rounded-3xl hover:border hover:border-white/50 bg-white/5 p-4 `
+        ` sm:p-3 shadow-card shadow shadow-white hover:cursor-pointer hover:shadow-md transition-all duration-300 hover:scale-102 hover:rounded-xl hover:border hover:border-white/50 bg-white/5 p-4 `
       }
     >
       <Link href={`/pages/shop/${product.id}`}>

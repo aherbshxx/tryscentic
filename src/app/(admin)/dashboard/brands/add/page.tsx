@@ -10,11 +10,11 @@ export default function AddBrandPage() {
                     href="/dashboard/brands"
                     className="p-2 hover:bg-gray-100 rounded-full transition-colors"
                 >
-                    <ArrowLeft size={24} className="text-gray-600" />
+                    <ArrowLeft size={24} className="text-gray-200" />
                 </Link>
                 <div>
-                    <h1 className="text-3xl font-bold text-gray-900 font-serif">Add New Brand</h1>
-                    <p className="text-gray-500">Create a new brand and upload its logo</p>
+                    <h1 className="text-3xl font-bold text-white font-serif">Add New Brand</h1>
+                    <p className="text-gray-200">Create a new brand and upload its logo</p>
                 </div>
             </div>
 

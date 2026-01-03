@@ -21,6 +21,26 @@ export interface Category {
   created_at: string;
 }
 
+export interface VariantImage {
+  id: string;
+  variant_id: string;
+  image_url: string;
+  sort_order: number;
+  created_at: string;
+}
+
+export interface ProductVariant {
+  id: string;
+  product_id: string;
+  size_label: string;
+  price: number;
+  stock_quantity: number;
+  thumbnail_image: string | null;
+  created_at: string;
+  // Joined data
+  images?: VariantImage[];
+}
+
 export interface Profile {
   id: string;
   email: string | null;
@@ -40,7 +60,7 @@ export interface Product {
   brand_id: string | null;
   category_id: string | null;
   base_image_url: string | null;
-  gallery_images: string[] | null;
+  gallery_images?: string[] | null; // Keep for backward compat during migration
   is_active: boolean;
   rating: number;
   review_count: number;
@@ -49,15 +69,6 @@ export interface Product {
   brand?: Brand;
   category?: Category;
   variants?: ProductVariant[];
-}
-
-export interface ProductVariant {
-  id: string;
-  product_id: string;
-  size_label: string;
-  price: number;
-  stock_quantity: number;
-  created_at: string;
 }
 
 export interface Order {

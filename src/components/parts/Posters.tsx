@@ -1,6 +1,6 @@
 export default function Posters() {
   return (
-    <section>
+    <section className="py-6 bg-gradient-to-b from-secondary/40 to-transparent">
       <div className="min-h-100 p-5 grid grid-cols-1 gap-5 md:grid-cols-2">
         <div
           className="relative bg-cover bg-center text-center content-center"

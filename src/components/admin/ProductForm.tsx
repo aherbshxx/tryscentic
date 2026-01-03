@@ -6,15 +6,46 @@ import { createProduct, updateProduct, getBrands, getCategories, createBrand, cr
 import { uploadImage, uploadImages } from '@/lib/utils/upload-image';
 import { Brand, Category, Product } from '@/types/database';
 import { toast } from 'sonner';
-import { Plus, X, Upload, ArrowLeft, ImageIcon, Loader2, Trash2 } from 'lucide-react';
+import { Plus, X, Upload, ArrowLeft, ImageIcon, Loader2, Trash2, Edit2 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { InputField } from '../ui/Forms/InputField';
+
+interface VariantFormData {
+    id?: string;
+    size_label: string;
+    price: number;
+    stock_quantity: number;
+    thumbnail_image: string | null;
+    images: {
+        id?: string;
+        image_url: string;
+        sort_order: number;
+    }[];
+}
+
+interface ProductFormData {
+    title: string;
+    description: string;
+    brand_id: string;
+    category_id: string;
+    base_image_url: string;
+    variants: VariantFormData[];
+}
 
 interface ProductFormProps {
     initialData?: Product;
     mode?: 'create' | 'edit';
 }
+
+const fileToBase64 = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = () => resolve(reader.result as string);
+        reader.onerror = error => reject(error);
+    });
+};
 
 export default function ProductForm({ initialData, mode = 'create' }: ProductFormProps) {
     const router = useRouter();
@@ -27,20 +58,25 @@ export default function ProductForm({ initialData, mode = 'create' }: ProductFor
     const [showNewCategory, setShowNewCategory] = useState(false);
 
     // Initialize form data
-    const [formData, setFormData] = useState({
+    const [formData, setFormData] = useState<ProductFormData>({
         title: initialData?.title || '',
         description: initialData?.description || '',
         brand_id: initialData?.brand_id || '',
         category_id: initialData?.category_id || '',
         base_image_url: initialData?.base_image_url || '',
-        gallery_images: initialData?.gallery_images || [] as string[],
         variants: initialData?.variants?.map(v => ({
             id: v.id, // Keep ID for updates
             size_label: v.size_label,
             price: v.price,
-            stock_quantity: v.stock_quantity
+            stock_quantity: v.stock_quantity,
+            thumbnail_image: v.thumbnail_image || null,
+            images: v.images?.map(img => ({
+                id: img.id,
+                image_url: img.image_url,
+                sort_order: img.sort_order
+            })) || []
         })) || [
-                { size_label: '', price: 0, stock_quantity: 0 }
+                { size_label: '', price: 0, stock_quantity: 0, thumbnail_image: null, images: [] }
             ]
     });
 
@@ -98,7 +134,7 @@ export default function ProductForm({ initialData, mode = 'create' }: ProductFor
     const handleAddVariant = () => {
         setFormData({
             ...formData,
-            variants: [...formData.variants, { size_label: '', price: 0, stock_quantity: 0 }]
+            variants: [...formData.variants, { size_label: '', price: 0, stock_quantity: 0, thumbnail_image: null, images: [] }]
         });
     };
 
@@ -115,110 +151,80 @@ export default function ProductForm({ initialData, mode = 'create' }: ProductFor
         setFormData({ ...formData, variants: newVariants });
     };
 
-    // Image Upload Logic
-    const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, isBase: boolean) => {
+    // Variant Image Management
+    const handleVariantImageUpload = async (variantIndex: number, e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (!files || files.length === 0) return;
 
         try {
             setUploading(true);
             const fileArray = Array.from(files);
-
-            // Convert to format expected by uploadImages
             const filesToUpload = await Promise.all(
                 fileArray.map(async (file) => {
-                    const buffer = await file.arrayBuffer();
+                    const base64 = await fileToBase64(file);
                     return {
                         name: file.name,
-                        data: Buffer.from(buffer)
+                        data: base64
                     };
                 })
             );
 
-            // Note: In a real client-side component, we might want to upload directly to Supabase via client SDK 
-            // to avoid sending large files to Next.js server actions if payload limits are an issue.
-            // But for now, using the server action utility:
+            const urls = await uploadImages(filesToUpload);
+            const newVariants = [...formData.variants];
+            const variant = newVariants[variantIndex];
 
-            if (isBase) {
-                // Upload single base image
-                const url = await uploadImage(filesToUpload[0].data, filesToUpload[0].name);
-                setFormData(prev => ({ ...prev, base_image_url: url }));
-            } else {
-                // Upload gallery images
-                const urls = await uploadImages(filesToUpload);
-                setFormData(prev => ({
-                    ...prev,
-                    gallery_images: [...prev.gallery_images, ...urls]
-                }));
-            }
+            const newImages = [...variant.images, ...urls.map((url, i) => ({
+                image_url: url,
+                sort_order: variant.images.length + i
+            }))];
 
-            toast.success('Images uploaded successfully');
-        } catch (error: any) {
-            console.error('Upload failed:', error);
-            toast.error(error.message || 'Failed to upload images');
+            newVariants[variantIndex] = { ...variant, images: newImages };
+            setFormData(prev => ({ ...prev, variants: newVariants }));
+
+            toast.success('Variant images uploaded');
+        } catch (error) {
+            console.error(error);
+            toast.error('Upload failed');
         } finally {
             setUploading(false);
-            // Reset input
             e.target.value = '';
         }
     };
 
-    const handleRemoveGalleryImage = (index: number) => {
-        setFormData({
-            ...formData,
-            gallery_images: formData.gallery_images.filter((_, i) => i !== index)
-        });
+    const handleRemoveVariantImage = (variantIndex: number, imageIndex: number) => {
+        const newVariants = [...formData.variants];
+        const variant = newVariants[variantIndex];
+        const newImages = variant.images.filter((_, i) => i !== imageIndex);
+        newVariants[variantIndex] = { ...variant, images: newImages };
+        setFormData(prev => ({ ...prev, variants: newVariants }));
     };
 
-    // Drag and Drop Logic
-    const [dragActive, setDragActive] = useState(false);
+    const handleSetVariantThumbnail = (variantIndex: number, imageUrl: string) => {
+        const newVariants = [...formData.variants];
+        newVariants[variantIndex] = { ...newVariants[variantIndex], thumbnail_image: imageUrl };
+        setFormData(prev => ({ ...prev, variants: newVariants }));
+    };
 
-    const handleDrag = useCallback((e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        if (e.type === "dragenter" || e.type === "dragover") {
-            setDragActive(true);
-        } else if (e.type === "dragleave") {
-            setDragActive(false);
+    // Base Image Upload (formerly handleFileUpload)
+    const handleBaseImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = e.target.files;
+        if (!files || files.length === 0) return;
+
+        try {
+            setUploading(true);
+            const file = files[0];
+            const base64 = await fileToBase64(file);
+            const url = await uploadImage(base64, file.name);
+            setFormData(prev => ({ ...prev, base_image_url: url }));
+            toast.success('Base image uploaded');
+        } catch (error) {
+            console.error(error);
+            toast.error('Upload failed');
+        } finally {
+            setUploading(false);
+            e.target.value = '';
         }
-    }, []);
-
-    const handleDrop = useCallback(async (e: React.DragEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-        setDragActive(false);
-
-        const files = e.dataTransfer.files;
-        if (files && files.length > 0) {
-            // Trigger upload logic essentially identical to file input
-            // (Refactored for reuse if strictly needed, or just copy logic momentarily)
-            try {
-                setUploading(true);
-                const fileArray = Array.from(files);
-                const filesToUpload = await Promise.all(
-                    fileArray.map(async (file) => {
-                        const buffer = await file.arrayBuffer();
-                        return {
-                            name: file.name,
-                            data: Buffer.from(buffer)
-                        };
-                    })
-                );
-
-                const urls = await uploadImages(filesToUpload);
-                setFormData(prev => ({
-                    ...prev,
-                    gallery_images: [...prev.gallery_images, ...urls]
-                }));
-                toast.success('Images uploaded');
-            } catch (error) {
-                console.error(error);
-                toast.error('Upload failed');
-            } finally {
-                setUploading(false);
-            }
-        }
-    }, []);
+    };
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -429,104 +435,51 @@ export default function ProductForm({ initialData, mode = 'create' }: ProductFor
                 </div>
             </div>
 
-            {/* Images */}
-            <div className="bg-white rounded-xl shadow-sm p-6 space-y-6 border border-gray-100">
+            {/* Product Images (Base) */}
+            <div className="bg-white rounded-xl shadow-sm p-6 space-y-4 border border-gray-100">
                 <h2 className="text-xl font-semibold text-gray-900 border-b pb-2">Product Images</h2>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    {/* Base Image */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-800 mb-2">Base Image (Main)</label>
-                        <div className="flex items-start gap-4">
-                            <div className="relative w-32 h-32 bg-gray-100 rounded-lg overflow-hidden border border-gray-200 shadow-inner flex-shrink-0">
-                                {formData.base_image_url ? (
-                                    <Image
-                                        src={formData.base_image_url}
-                                        alt="Base preview"
-                                        fill
-                                        className="object-cover"
-                                    />
-                                ) : (
-                                    <div className="flex items-center justify-center h-full text-gray-400">
-                                        <ImageIcon size={32} />
-                                    </div>
-                                )}
-                                {uploading && <div className="absolute inset-0 bg-black/50 flex items-center justify-center text-white"><Loader2 className="animate-spin" /></div>}
-                            </div>
-                            <div className="flex-1">
-                                <input
-                                    type="file"
-                                    accept="image/*"
-                                    onChange={(e) => handleFileUpload(e, true)}
-                                    className="hidden"
-                                    id="base-image-upload"
+                <div className="flex items-start gap-6">
+                    <div className="relative w-40 h-40 bg-gray-50 rounded-xl overflow-hidden border-2 border-dashed border-gray-300 shrink-0 group">
+                        {formData.base_image_url ? (
+                            <>
+                                <Image
+                                    src={formData.base_image_url}
+                                    alt="Base"
+                                    fill
+                                    className="object-cover"
                                 />
-                                <label
-                                    htmlFor="base-image-upload"
-                                    className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 rounded-lg text-sm font-medium text-gray-800 hover:bg-gray-50 cursor-pointer shadow-sm transition-all"
-                                >
-                                    <Upload size={16} />
-                                    Upload Base Image
-                                </label>
-                                <p className="text-xs text-gray-500 mt-2">
-                                    Recommended: 800x800px, JPG or PNG.
-                                </p>
-                            </div>
-                        </div>
-                    </div>
-
-                    {/* Gallery Images Dropzone */}
-                    <div>
-                        <label className="block text-sm font-medium text-gray-800 mb-2">Gallery Images</label>
-                        <div
-                            className={`border-2 border-dashed rounded-lg p-6 text-center transition-all ${dragActive
-                                ? 'border-[#511624] bg-[#511624]/5 transform scale-[1.02]'
-                                : 'border-gray-300 hover:border-[#511624] hover:bg-gray-50'
-                                }`}
-                            onDragEnter={handleDrag}
-                            onDragLeave={handleDrag}
-                            onDragOver={handleDrag}
-                            onDrop={handleDrop}
-                        >
-                            <input
-                                type="file"
-                                accept="image/*"
-                                multiple
-                                onChange={(e) => handleFileUpload(e, false)}
-                                className="hidden"
-                                id="gallery-upload"
-                            />
-                            <label htmlFor="gallery-upload" className="cursor-pointer block">
-                                <div className="mx-auto w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mb-3 text-gray-400">
-                                    {uploading ? <Loader2 className="animate-spin" /> : <Upload />}
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <label className="cursor-pointer p-2 bg-white rounded-full text-[#511624] hover:scale-110 transition-transform shadow-lg">
+                                        <Edit2 size={20} />
+                                        <input type="file" accept="image/*" className="hidden" onChange={handleBaseImageUpload} />
+                                    </label>
                                 </div>
-                                <p className="text-sm font-medium text-gray-900">Click to upload or drag and drop</p>
-                                <p className="text-xs text-gray-500 mt-1">SVG, PNG, JPG or GIF (max. 5MB)</p>
+                            </>
+                        ) : (
+                            <label className="absolute inset-0 flex flex-col items-center justify-center cursor-pointer hover:bg-gray-100 transition-colors">
+                                <Upload className="text-gray-400 mb-2" size={32} />
+                                <span className="text-xs font-medium text-gray-500">Upload Base Image</span>
+                                <input type="file" accept="image/*" className="hidden" onChange={handleBaseImageUpload} />
                             </label>
+                        )}
+                        {uploading && (
+                            <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center">
+                                <Loader2 className="animate-spin text-[#511624]" size={32} />
+                            </div>
+                        )}
+                    </div>
+                    <div className="flex-1 space-y-2">
+                        <h3 className="text-lg font-medium text-gray-900">Base Image</h3>
+                        <p className="text-sm text-gray-500 max-w-md">
+                            This is the primary image shown in search results and at the top of the product page.
+                            Variant-specific images can be added in the variants section below.
+                        </p>
+                        <div className="text-xs text-gray-400 flex items-center gap-2">
+                            <ImageIcon size={14} />
+                            Recommended: 1000x1000px+, Square aspect ratio
                         </div>
                     </div>
                 </div>
-
-                {/* Gallery Preview Grid */}
-                {formData.gallery_images.length > 0 && (
-                    <div>
-                        <h3 className="text-sm font-medium text-gray-800 mb-3">Gallery Preview</h3>
-                        <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-8 gap-4">
-                            {formData.gallery_images.map((url, idx) => (
-                                <div key={idx} className="group relative aspect-square bg-gray-100 rounded-lg overflow-hidden border border-gray-200">
-                                    <Image src={url} alt={`Gallery ${idx}`} fill className="object-cover" />
-                                    <button
-                                        type="button"
-                                        onClick={() => handleRemoveGalleryImage(idx)}
-                                        className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity"
-                                    >
-                                        <Trash2 size={20} />
-                                    </button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
             </div>
 
             {/* Variants */}
@@ -545,7 +498,7 @@ export default function ProductForm({ initialData, mode = 'create' }: ProductFor
 
                 <div className="space-y-4">
                     {formData.variants.map((variant, index) => (
-                        <div key={index} className="flex gap-4 items-start p-5 bg-gray-50 rounded-xl border border-gray-100 shadow-sm relative group">
+                        <div key={index} className="p-5 bg-gray-50 rounded-xl border border-gray-100 shadow-sm relative group">
                             <span className="absolute -left-2 top-1/2 -translate-y-1/2 w-4 h-4 rounded-full bg-gray-300 group-hover:bg-[#511624] transition-colors" />
                             <div className="flex-1 grid grid-cols-1 md:grid-cols-3 gap-4">
                                 <div>
@@ -592,6 +545,67 @@ export default function ProductForm({ initialData, mode = 'create' }: ProductFor
                                     />
                                 </div>
                             </div>
+
+                            {/* Variant Image Manager */}
+                            <div className="mt-6 pt-6 border-t border-gray-200/60">
+                                <div className="flex items-center justify-between mb-4">
+                                    <div>
+                                        <h3 className="text-sm font-bold text-gray-900">Variant Gallery</h3>
+                                        <p className="text-xs text-gray-500">Add photos specific to this {variant.size_label || 'size'}</p>
+                                    </div>
+                                    <label className="cursor-pointer inline-flex items-center gap-2 px-3 py-1.5 bg-[#511624] text-white rounded-lg text-xs font-bold hover:bg-[#511624]/90 transition-all shadow-sm active:scale-95">
+                                        <Plus size={14} />
+                                        Add Photos
+                                        <input
+                                            type="file"
+                                            multiple
+                                            accept="image/*"
+                                            className="hidden"
+                                            onChange={(e) => handleVariantImageUpload(index, e)}
+                                        />
+                                    </label>
+                                </div>
+                                <div className="grid grid-cols-4 sm:grid-cols-6 md:grid-cols-10 gap-3">
+                                    {variant.images.map((img, imgIdx) => (
+                                        <div
+                                            key={imgIdx}
+                                            className={`group relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${variant.thumbnail_image === img.image_url ? 'border-[#511624] ring-2 ring-[#511624]/20 scale-95' : 'border-gray-200 hover:border-gray-300'}`}
+                                        >
+                                            <Image src={img.image_url} alt="Variant" fill className="object-cover" />
+                                            {variant.thumbnail_image === img.image_url && (
+                                                <div className="absolute top-1 left-1 bg-[#511624] text-white text-[8px] font-bold px-1.5 py-0.5 rounded shadow-sm z-10">
+                                                    THUMBNAIL
+                                                </div>
+                                            )}
+                                            <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-1.5 z-20">
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleSetVariantThumbnail(index, img.image_url)}
+                                                    title="Set as Thumbnail"
+                                                    className={`p-1.5 rounded-md transition-colors ${variant.thumbnail_image === img.image_url ? 'bg-[#511624] text-white' : 'bg-white text-[#511624] hover:bg-[#511624] hover:text-white'}`}
+                                                >
+                                                    <ImageIcon size={14} />
+                                                </button>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleRemoveVariantImage(index, imgIdx)}
+                                                    title="Remove Image"
+                                                    className="p-1.5 bg-white text-red-600 rounded-md hover:bg-red-600 hover:text-white transition-colors"
+                                                >
+                                                    <Trash2 size={14} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {variant.images.length === 0 && (
+                                        <div className="col-span-full py-6 flex flex-col items-center justify-center border-2 border-dashed border-gray-200 rounded-xl text-gray-400 bg-white/50">
+                                            <ImageIcon size={24} className="mb-2 opacity-50" />
+                                            <span className="text-xs font-medium">No images for this variant yet</span>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
                             {formData.variants.length > 1 && (
                                 <button
                                     type="button"
